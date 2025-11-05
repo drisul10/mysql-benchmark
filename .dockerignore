@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.json
+*.log
+.git/
+.gitignore
+README.md
+mysql_test.sh
+.DS_Store

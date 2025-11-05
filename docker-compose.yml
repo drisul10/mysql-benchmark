@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  mysql-test:
+    build: .
+    image: mysql-performance-test:latest
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST:-localhost}
+      - MYSQL_USER=${MYSQL_USER:-root}
+      - MYSQL_PASS=${MYSQL_PASS}
+      - MYSQL_DB=${MYSQL_DB:-perftest}
+    volumes:
+      - ./output:/app/output
+    network_mode: host
+    command: >
+      --label "Docker-Test"
+      --single-inserts 10000
+      --threads 10
+      --writes-per-thread 1000
+      --read-queries 10000
+      --yes
