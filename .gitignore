@@ -12,6 +12,7 @@ __pycache__/
 .Python
 
 # Test Results
+output/*.md
 output/*.json
 !output/.gitkeep
 

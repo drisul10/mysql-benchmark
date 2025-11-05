@@ -25,10 +25,10 @@ USAGE EXAMPLES:
     1. Basic comparison (table format):
         python3 compare-results.py output/result1.json output/result2.json
 
-    2. Export comparison to markdown:
+    2. Export comparison to markdown (auto-saves to output/ folder):
         python3 compare-results.py result1.json result2.json --format markdown --output comparison.md
 
-    3. Export to JSON for further analysis:
+    3. Export to JSON for further analysis (auto-saves to output/ folder):
         python3 compare-results.py result1.json result2.json --format json --output comparison.json
 
     4. Compare with custom labels:
@@ -43,10 +43,11 @@ OUTPUT FORMATS:
     - json: Machine-readable JSON format
 
 INTERPRETATION:
-    - Positive % in TPS/QPS: Better (higher throughput)
-    - Negative % in Latency: Better (lower latency)
-    - 🏆 emoji: Winner for that metric
-    - Significant: >10% difference by default
+    - Difference % is always positive (absolute difference)
+    - Winner column shows which database performed better
+    - Higher TPS/QPS is better (more throughput)
+    - Lower Latency (ms) is better (faster response)
+    - Winner shown only for significant differences (>10% by default)
 
 AUTHOR: Enhanced MySQL Performance Testing Script
 VERSION: 2.0
@@ -55,6 +56,7 @@ VERSION: 2.0
 import json
 import argparse
 import sys
+import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
@@ -146,18 +148,23 @@ class ResultComparator:
             lower_is_better: True if lower values are better (e.g., latency)
 
         Returns:
-            Tuple of (percentage_diff, winner_emoji)
+            Tuple of (percentage_diff, winner_label)
+            Note: percentage_diff is always positive showing absolute improvement
         """
         if val2 == 0:
             return 0.0, ""
 
-        diff_pct = ((val1 - val2) / val2) * 100
+        # Calculate absolute percentage difference
+        diff_pct = abs(((val1 - val2) / val2) * 100)
 
-        # Determine winner
-        if lower_is_better:
-            winner = "🏆" if val1 < val2 and abs(diff_pct) >= self.threshold else ""
+        # Determine winner - show database label
+        if diff_pct >= self.threshold:
+            if lower_is_better:
+                winner = self.label1 if val1 < val2 else self.label2
+            else:
+                winner = self.label1 if val1 > val2 else self.label2
         else:
-            winner = "🏆" if val1 > val2 and abs(diff_pct) >= self.threshold else ""
+            winner = ""
 
         return diff_pct, winner
 
@@ -213,7 +220,7 @@ class ResultComparator:
                 diff_pct, winner = self.calculate_difference(val1, val2, lower_is_better)
 
                 metric_name = self.metric_names.get(metric, metric)
-                output.append(f"{metric_name:<30} {val1:<20.2f} {val2:<20.2f} {diff_pct:>+7.2f}% {winner}")
+                output.append(f"{metric_name:<30} {val1:<20.2f} {val2:<20.2f} {diff_pct:>7.2f}% {winner}")
 
         # Overall summary
         output.append(f"\n{'=' * 90}")
@@ -227,31 +234,31 @@ class ResultComparator:
             output.append(f"\nAverage Write Throughput:")
             output.append(f"  {self.label1}: {summary['db1_write_tps']:.2f} TPS")
             output.append(f"  {self.label2}: {summary['db2_write_tps']:.2f} TPS")
-            diff = ((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
-            output.append(f"  Difference: {diff:+.2f}%")
+            diff = abs((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
+            output.append(f"  Difference: {diff:.2f}%")
 
         if summary['read_tests']:
             output.append(f"\nAverage Read Throughput:")
             output.append(f"  {self.label1}: {summary['db1_read_qps']:.2f} QPS")
             output.append(f"  {self.label2}: {summary['db2_read_qps']:.2f} QPS")
-            diff = ((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
-            output.append(f"  Difference: {diff:+.2f}%")
+            diff = abs((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
+            output.append(f"  Difference: {diff:.2f}%")
 
         # Winner determination
         output.append(f"\n{'=' * 90}")
         if summary['write_tests'] and summary['db1_write_tps'] > summary['db2_write_tps']:
             perf_improvement = ((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
-            output.append(f"🏆 {self.label1} has BETTER WRITE PERFORMANCE by {perf_improvement:.2f}%")
+            output.append(f"WINNER: {self.label1} has BETTER WRITE PERFORMANCE by {perf_improvement:.2f}%")
         elif summary['write_tests']:
             perf_improvement = ((summary['db2_write_tps'] - summary['db1_write_tps']) / summary['db1_write_tps'] * 100)
-            output.append(f"🏆 {self.label2} has BETTER WRITE PERFORMANCE by {perf_improvement:.2f}%")
+            output.append(f"WINNER: {self.label2} has BETTER WRITE PERFORMANCE by {perf_improvement:.2f}%")
 
         if summary['read_tests'] and summary['db1_read_qps'] > summary['db2_read_qps']:
             perf_improvement = ((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
-            output.append(f"🏆 {self.label1} has BETTER READ PERFORMANCE by {perf_improvement:.2f}%")
+            output.append(f"WINNER: {self.label1} has BETTER READ PERFORMANCE by {perf_improvement:.2f}%")
         elif summary['read_tests']:
             perf_improvement = ((summary['db2_read_qps'] - summary['db1_read_qps']) / summary['db1_read_qps'] * 100)
-            output.append(f"🏆 {self.label2} has BETTER READ PERFORMANCE by {perf_improvement:.2f}%")
+            output.append(f"WINNER: {self.label2} has BETTER READ PERFORMANCE by {perf_improvement:.2f}%")
 
         output.append(f"{'=' * 90}")
 
@@ -305,7 +312,7 @@ class ResultComparator:
                 diff_pct, winner = self.calculate_difference(val1, val2, lower_is_better)
 
                 metric_name = self.metric_names.get(metric, metric)
-                output.append(f"| {metric_name} | {val1:.2f} | {val2:.2f} | {diff_pct:+.2f}% | {winner} |")
+                output.append(f"| {metric_name} | {val1:.2f} | {val2:.2f} | {diff_pct:.2f}% | {winner} |")
 
             output.append("")
 
@@ -317,24 +324,31 @@ class ResultComparator:
             output.append("### Write Performance\n")
             output.append(f"- **{self.label1}:** {summary['db1_write_tps']:.2f} TPS")
             output.append(f"- **{self.label2}:** {summary['db2_write_tps']:.2f} TPS")
-            diff = ((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
-            output.append(f"- **Difference:** {diff:+.2f}%\n")
+            diff = abs((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
+            output.append(f"- **Difference:** {diff:.2f}%\n")
 
         if summary['read_tests']:
             output.append("### Read Performance\n")
             output.append(f"- **{self.label1}:** {summary['db1_read_qps']:.2f} QPS")
             output.append(f"- **{self.label2}:** {summary['db2_read_qps']:.2f} QPS")
-            diff = ((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
-            output.append(f"- **Difference:** {diff:+.2f}%\n")
+            diff = abs((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
+            output.append(f"- **Difference:** {diff:.2f}%\n")
 
         # Winner
         output.append("## Winner\n")
         if summary['write_tests'] and summary['db1_write_tps'] > summary['db2_write_tps']:
             perf = ((summary['db1_write_tps'] - summary['db2_write_tps']) / summary['db2_write_tps'] * 100)
-            output.append(f"🏆 **{self.label1}** has better write performance by **{perf:.2f}%**\n")
+            output.append(f"**{self.label1}** has better write performance by **{perf:.2f}%**\n")
         elif summary['write_tests']:
             perf = ((summary['db2_write_tps'] - summary['db1_write_tps']) / summary['db1_write_tps'] * 100)
-            output.append(f"🏆 **{self.label2}** has better write performance by **{perf:.2f}%**\n")
+            output.append(f"**{self.label2}** has better write performance by **{perf:.2f}%**\n")
+
+        if summary['read_tests'] and summary['db1_read_qps'] > summary['db2_read_qps']:
+            perf = ((summary['db1_read_qps'] - summary['db2_read_qps']) / summary['db2_read_qps'] * 100)
+            output.append(f"**{self.label1}** has better read performance by **{perf:.2f}%**\n")
+        elif summary['read_tests']:
+            perf = ((summary['db2_read_qps'] - summary['db1_read_qps']) / summary['db1_read_qps'] * 100)
+            output.append(f"**{self.label2}** has better read performance by **{perf:.2f}%**\n")
 
         return "\n".join(output)
 
@@ -384,11 +398,20 @@ class ResultComparator:
                 lower_is_better = self.is_latency_metric(metric)
                 diff_pct, winner = self.calculate_difference(val1, val2, lower_is_better)
 
+                # Determine winner: 1 = db1 wins, 2 = db2 wins, 0 = no significant difference
+                if abs(diff_pct) >= self.threshold:
+                    if lower_is_better:
+                        winner_id = 1 if val1 < val2 else 2
+                    else:
+                        winner_id = 1 if val1 > val2 else 2
+                else:
+                    winner_id = 0
+
                 test_comparison[metric] = {
                     'database1_value': val1,
                     'database2_value': val2,
                     'difference_pct': round(diff_pct, 2),
-                    'winner': 1 if winner and val1 < val2 if lower_is_better else val1 > val2 else (2 if winner else 0)
+                    'winner': winner_id
                 }
 
             comparison['comparisons'][test_key] = {
@@ -572,9 +595,16 @@ Examples:
 
         # Output results
         if args.output:
-            with open(args.output, 'w') as f:
+            # Auto-prepend output/ directory if no path specified
+            output_path = args.output
+            if not os.path.dirname(output_path):
+                output_dir = "output"
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, output_path)
+
+            with open(output_path, 'w') as f:
                 f.write(output_text)
-            print(f"✓ Comparison saved to: {args.output}")
+            print(f"✓ Comparison saved to: {output_path}")
         else:
             print(output_text)
 
